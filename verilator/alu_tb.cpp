@@ -3,6 +3,48 @@
 #include "verilated_vcd_c.h"
 #include "verilated.h"
 #include <assert.h>
+#include <time.h>
+
+#define ALU_OP_PT1		0
+#define ALU_OP_PT2		1
+#define ALU_OP_ADD 		2
+#define ALU_OP_SUB 		3
+#define ALU_OP_AND 		4
+#define ALU_OP_OR  		5
+#define ALU_OP_XOR 		6
+#define ALU_OP_MUL 		7
+#define ALU_OP_MULH 	8
+#define ALU_OP_MULHU 	9
+#define ALU_OP_MULHSU 	10
+#define ALU_OP_DIV 		11
+#define ALU_OP_DIVU 	12
+#define ALU_OP_REM 		13
+#define ALU_OP_REMU 	14
+#define ALU_OP_LSH		15
+#define ALU_OP_RSH		16
+#define ALU_OP_ARSH		17
+
+const char *op_format[18] = 
+{
+	"\\pi_1(0b%032b, 0b%032b) = 0b%032b                    (expected 0b%032b), xor 0b%032b\n",
+	"\\pi_2(0b%032b, 0b%032b) = 0b%032b                    (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b + 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b - 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b & 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b | 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b ^ 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b * 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
+	"upper 0b%032b * 0b%032b = 0b%032b                     (expected 0b%032b), xor 0b%032b\n",
+	"upper (unsigned) 0b%032b * 0b%032b = 0b%032b          (expected 0b%032b), xor 0b%032b\n",
+	"upper (signed, unsigned) 0b%032b * 0b%032b = 0b%032b  (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b / 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
+	"(unsigned) 0b%032b / 0b%032b = 0b%032b                (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b %% 0b%032b = 0b%032b                          (expected 0b%032b), xor 0b%032b\n",
+	"(unsigned) 0b%032b %% 0b%032b = 0b%032b               (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b << 0b%032b = 0b%032b                          (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b >> 0b%032b = 0b%032b                          (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b >>> 0b%032b = 0b%032b                         (expected 0b%032b), xor 0b%032b\n"
+};
 
 static uint64_t ticks = 0;
 VerilatedVcdC* tfp = new VerilatedVcdC;
@@ -20,30 +62,70 @@ void tick(Valu* alu)
     if (tfp) tfp->dump(ticks++);
 }
 
+int expected_result(int x, int y, int op)
+{
+	switch (op)
+	{
+		case (ALU_OP_PT1): 	return x;
+		case (ALU_OP_PT2): 	return y;
+		case (ALU_OP_ADD): 	return x+y;
+		case (ALU_OP_SUB): 	return x-y;
+		case (ALU_OP_AND): 	return x&y;
+		case (ALU_OP_OR):	return x|y;
+		case (ALU_OP_XOR):	return x^y;
+		case (ALU_OP_MUL):	return (int)(((int64_t)x*(int64_t)y));
+		case (ALU_OP_MULH):	return (int)(((int64_t)x*(int64_t)y) >> 32);
+		case (ALU_OP_MULHU):	return (int)(((uint64_t)x*(uint64_t)y) >> 32);
+		case (ALU_OP_MULHSU):	return (int)(((int64_t)x*(uint64_t)y) >> 32);
+		case (ALU_OP_DIV):	return x / y;
+		case (ALU_OP_DIVU):	return (int)((uint32_t)x / (uint32_t)y);
+		case (ALU_OP_REM):	return x % y;
+		case (ALU_OP_REMU):	return (int)((uint32_t)x % (uint32_t)y);
+		case (ALU_OP_LSH):	return (y < 32 ? x << (y & 31) : 0);
+		case (ALU_OP_RSH):	return (y < 32 ? (uint32_t) x >> (y & 31) : (uint32_t)x >> 32);
+		case (ALU_OP_ARSH):	return (y < 32 ? x >> (y & 31) : 0);
+		default: assert(false);
+	}
+}
 
-int multiply(Valu* alu, int x, int y)
+
+int sync_op(Valu* alu, int x, int y, int operation)
 {
 	alu->in1 = x;
 	alu->in2 = y;
-	alu->operation = 7;
+	alu->operation = operation;
 	alu->trigger_sync = 1;
-
-	printf("Multiplying %d by %d\n", x, y);
 
 	do {
 		tick(alu);
-		printf("Ticks: %d. busy: %d, result_ready: %d\n", ticks, alu->busy, alu->result_ready);
 		alu->trigger_sync = 0;
 	} while (!alu->result_ready);
 	
-	printf("Result: %d\n", alu->out_sync);
 	return alu->out_sync;
 }
 
-#define CHECK_PRODUCT(x, y) assert(multiply(alu, x, y) == x * y)
+int async_op(Valu* alu, int x, int y, int operation)
+{
+	alu->in1 = x;
+	alu->in2 = y;
+	alu->operation = operation;
+
+	alu->eval();
+	
+	return alu->out_async;
+}
+
+int alu_calc(Valu* alu, int x, int y, int op, int sync)
+{
+	return (sync) ? sync_op(alu, x, y, op) : async_op(alu, x, y, op);
+}
+
+#define N_TESTS 64
 
 int main(int argc, char **argv) 
 {
+	srand(time(0));
+	
     Verilated::commandArgs(argc, argv);
     Valu* alu = new Valu;
     
@@ -51,12 +133,40 @@ int main(int argc, char **argv)
 	alu->trace(tfp, 99);
 	tfp->open("wave.vcd");
 
-	CHECK_PRODUCT(5, 5);
-	CHECK_PRODUCT(-5, 5);
-	CHECK_PRODUCT(1, 0);
-	CHECK_PRODUCT(1, 1);
-	CHECK_PRODUCT(69, 420);
-	CHECK_PRODUCT(135135, 3);
+	int x, y, r, expected;
+	int sync = 0;
+	int good = 1;
+
+	for (int op = 0; good && op < 18; op++)
+	{
+		sync = (op >= ALU_OP_MUL && op < ALU_OP_LSH);
+		for (int i = 0; good && i < N_TESTS; i++)
+		{
+			x = rand() % (0xffffffff >> (int)(32 * (1.0 - (float)(i+2) / (float)N_TESTS)));
+			y = rand() % (0xffffffff >> (int)(32 * (1.0 - (float)(i+2) / (float)N_TESTS)));
+			
+			if (!(op != ALU_OP_DIV && op != ALU_OP_DIVU && op != ALU_OP_REM && op != ALU_OP_REMU) && y == 0)
+				y = 1;
+			
+			
+			
+			r = alu_calc(alu, x, y, op, sync);
+			expected = expected_result(x, y, op);
+			
+			printf(op_format[op], x, y, r, expected, r ^ expected);
+			if (r ^ expected)
+			{
+				good = 0;
+			}
+		}
+	}
+	
+	tick(alu);
+	tick(alu);
+	tick(alu);
+	tick(alu);
+	tick(alu);
+	tick(alu);
     
     tfp->close();
 
