@@ -56,9 +56,9 @@ endmodule
 module alu
 (
 	input wire clock,
+	input wire clock_enable,
 	input wire [`ALU_OPERATION_WIDTH - 1 : 0] operation,
 	input wire [31:0] in1, input wire [31:0] in2,
-	input wire trigger_sync,
 	
 	output reg result_ready = 0,
 	output reg [31:0] out_sync,
@@ -158,9 +158,9 @@ module alu
 	wire [31:0] mul_next_partial_sum_cneg_ch 	=  mul_return_high_latched ? mul_next_partial_sum_cneg[63:32] : mul_next_partial_sum_cneg[31:0];
 	
 	always @(posedge clock) begin
-		case (state)
-			ALU_STATE_READY: begin
-				if (trigger_sync) begin
+		if (clock_enable) begin
+			case (state)
+				ALU_STATE_READY: begin
 					busy 		 <= 1;
 					result_ready <= 0;
 					
@@ -248,38 +248,38 @@ module alu
 						end
 					end
 				end
-			end
-			
-			ALU_STATE_MULTIPLYING: begin
-				if (index == 28) begin
-					out_sync <= mul_next_partial_sum_cneg_ch;
-					
-					result_ready <= 1;
-					busy 		 <= 0;
-					state 		 <= ALU_STATE_READY;
+				
+				ALU_STATE_MULTIPLYING: begin
+					if (index == 28) begin
+						out_sync <= mul_next_partial_sum_cneg_ch;
+						
+						result_ready <= 1;
+						busy 		 <= 0;
+						state 		 <= ALU_STATE_READY;
+					end
+					else begin
+						mul_accumulator <= mul_next_partial_sum;
+						index			<= index + 4;
+					end
 				end
-				else begin
-					mul_accumulator <= mul_next_partial_sum;
-					index			<= index + 4;
+				
+				ALU_STATE_DIVIDING: begin
+					if (index == 0) begin
+						out_sync <= negate_latched ? (rem ? -dividend_next : -div_accumulator_next) : (rem ? dividend_next : div_accumulator_next);
+						
+						result_ready <= 1;
+						busy 		 <= 0;
+						state 		 <= ALU_STATE_READY;
+					end
+					else begin
+						dividend 		<= dividend_next;
+						divisor  		<= divisor_next;
+						div_accumulator <= div_accumulator_next;
+						index 			<= index - 1;
+					end
 				end
-			end
-			
-			ALU_STATE_DIVIDING: begin
-				if (index == 0) begin
-					out_sync <= negate_latched ? (rem ? -dividend_next : -div_accumulator_next) : (rem ? dividend_next : div_accumulator_next);
-					
-					result_ready <= 1;
-					busy 		 <= 0;
-					state 		 <= ALU_STATE_READY;
-				end
-				else begin
-					dividend 		<= dividend_next;
-					divisor  		<= divisor_next;
-					div_accumulator <= div_accumulator_next;
-					index 			<= index - 1;
-				end
-			end
-		endcase
+			endcase
+		end
 	end
 	
 endmodule

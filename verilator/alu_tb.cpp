@@ -99,13 +99,12 @@ int sync_op(Valu* alu, int x, int y, int operation)
 	alu->in1 = x;
 	alu->in2 = y;
 	alu->operation = operation;
-	alu->trigger_sync = 1;
+	alu->clock_enable = 1;
 	
 	uint64_t start_ticks = ticks;
 
 	do {
 		tick(alu);
-		alu->trigger_sync = 0;
 		if (ticks > start_ticks + 64)
 		{
 			printf("Operation timeout\n");
@@ -113,6 +112,10 @@ int sync_op(Valu* alu, int x, int y, int operation)
 			return 0;
 		}
 	} while (!alu->result_ready);
+	
+	
+	alu->clock_enable = 0;
+	tick(alu);
 	
 	return alu->out_sync;
 }
