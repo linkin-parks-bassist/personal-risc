@@ -26,27 +26,28 @@
 
 const char *op_format[18] = 
 {
-	"\\pi_1(0b%032b, 0b%032b) = 0b%032b                    (expected 0b%032b), xor 0b%032b\n",
-	"\\pi_2(0b%032b, 0b%032b) = 0b%032b                    (expected 0b%032b), xor 0b%032b\n",
-	"0b%032b + 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
-	"0b%032b - 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
-	"0b%032b & 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
-	"0b%032b | 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
-	"0b%032b ^ 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
-	"0b%032b * 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
-	"upper 0b%032b * 0b%032b = 0b%032b                     (expected 0b%032b), xor 0b%032b\n",
-	"upper (unsigned) 0b%032b * 0b%032b = 0b%032b          (expected 0b%032b), xor 0b%032b\n",
-	"upper (signed, unsigned) 0b%032b * 0b%032b = 0b%032b  (expected 0b%032b), xor 0b%032b\n",
-	"0b%032b / 0b%032b = 0b%032b                           (expected 0b%032b), xor 0b%032b\n",
-	"(unsigned) 0b%032b / 0b%032b = 0b%032b                (expected 0b%032b), xor 0b%032b\n",
-	"0b%032b %% 0b%032b = 0b%032b                          (expected 0b%032b), xor 0b%032b\n",
-	"(unsigned) 0b%032b %% 0b%032b = 0b%032b               (expected 0b%032b), xor 0b%032b\n",
-	"0b%032b << 0b%032b = 0b%032b                          (expected 0b%032b), xor 0b%032b\n",
-	"0b%032b >> 0b%032b = 0b%032b                          (expected 0b%032b), xor 0b%032b\n",
-	"0b%032b >>> 0b%032b = 0b%032b                         (expected 0b%032b), xor 0b%032b\n"
+	"\\pi_1(0b%032b, 0b%032b) = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"\\pi_2(0b%032b, 0b%032b) = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b + 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b - 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b & 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b | 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b ^ 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b * 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"upper 0b%032b * 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"upper (unsigned) 0b%032b * 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"upper (signed, unsigned) 0b%032b * 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b / 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"(unsigned) 0b%032b / 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b %% 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"(unsigned) 0b%032b %% 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b << 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b >> 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b >>> 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n"
 };
 
 static uint64_t ticks = 0;
+static int good = 1;
 VerilatedVcdC* tfp = new VerilatedVcdC;
 
 void tick(Valu* alu)
@@ -64,6 +65,7 @@ void tick(Valu* alu)
 
 int expected_result(int x, int y, int op)
 {
+	int64_t prod;
 	switch (op)
 	{
 		case (ALU_OP_PT1): 	return x;
@@ -75,15 +77,18 @@ int expected_result(int x, int y, int op)
 		case (ALU_OP_XOR):	return x^y;
 		case (ALU_OP_MUL):	return (int)(((int64_t)x*(int64_t)y));
 		case (ALU_OP_MULH):	return (int)(((int64_t)x*(int64_t)y) >> 32);
-		case (ALU_OP_MULHU):	return (int)(((uint64_t)x*(uint64_t)y) >> 32);
-		case (ALU_OP_MULHSU):	return (int)(((int64_t)x*(uint64_t)y) >> 32);
+		case (ALU_OP_MULHU):	return (uint32_t)(((uint64_t)(uint32_t)x * (uint64_t)(uint32_t)y) >> 32);
+		case (ALU_OP_MULHSU):
+			prod = (int64_t)x * (uint64_t)(uint32_t)y;
+			return (int32_t)(prod >> 32);
+			break;
 		case (ALU_OP_DIV):	return x / y;
 		case (ALU_OP_DIVU):	return (int)((uint32_t)x / (uint32_t)y);
 		case (ALU_OP_REM):	return x % y;
 		case (ALU_OP_REMU):	return (int)((uint32_t)x % (uint32_t)y);
-		case (ALU_OP_LSH):	return (y < 32 ? x << (y & 31) : 0);
-		case (ALU_OP_RSH):	return (y < 32 ? (uint32_t) x >> (y & 31) : (uint32_t)x >> 32);
-		case (ALU_OP_ARSH):	return (y < 32 ? x >> (y & 31) : 0);
+		case (ALU_OP_LSH):	return ((uint32_t)y < 32 ? x << (uint32_t)(y & 31) : 0);
+		case (ALU_OP_RSH):	return ((uint32_t)y < 32 ? (uint32_t) x >> (y & 31) : (uint32_t)x >> 32);
+		case (ALU_OP_ARSH):	return ((uint32_t)y < 32 ? x >> (y & 31) : (x < 0) ? -1 : 0);
 		default: assert(false);
 	}
 }
@@ -95,10 +100,18 @@ int sync_op(Valu* alu, int x, int y, int operation)
 	alu->in2 = y;
 	alu->operation = operation;
 	alu->trigger_sync = 1;
+	
+	uint64_t start_ticks = ticks;
 
 	do {
 		tick(alu);
 		alu->trigger_sync = 0;
+		if (ticks > start_ticks + 64)
+		{
+			printf("Operation timeout\n");
+			good = 0;
+			return 0;
+		}
 	} while (!alu->result_ready);
 	
 	return alu->out_sync;
@@ -135,28 +148,40 @@ int main(int argc, char **argv)
 
 	int x, y, r, expected;
 	int sync = 0;
-	int good = 1;
+	int signs = 0;
+
+	tick(alu);
 
 	for (int op = 0; good && op < 18; op++)
 	{
 		sync = (op >= ALU_OP_MUL && op < ALU_OP_LSH);
-		for (int i = 0; good && i < N_TESTS; i++)
+		for (int signs = 0; signs < 4; signs++)
 		{
-			x = rand() % (0xffffffff >> (int)(32 * (1.0 - (float)(i+2) / (float)N_TESTS)));
-			y = rand() % (0xffffffff >> (int)(32 * (1.0 - (float)(i+2) / (float)N_TESTS)));
-			
-			if (!(op != ALU_OP_DIV && op != ALU_OP_DIVU && op != ALU_OP_REM && op != ALU_OP_REMU) && y == 0)
-				y = 1;
-			
-			
-			
-			r = alu_calc(alu, x, y, op, sync);
-			expected = expected_result(x, y, op);
-			
-			printf(op_format[op], x, y, r, expected, r ^ expected);
-			if (r ^ expected)
+			for (int flip = 0; flip < 2; flip++)
 			{
-				good = 0;
+				for (int i = 0; good && i < N_TESTS; i++)
+				{
+					if (flip)
+						x = (( signs & 1      ) ? (-1) : 1) * (rand() % (0xffffffff >> (int)(32 * (1.0 - (float)(i+2) / (float)N_TESTS))));
+					else
+						x = (( signs & 1      ) ? (-1) : 1) * (rand() % (0xffffffff >> (int)(32 * (1.0 - (float)((N_TESTS - i)+2) / (float)N_TESTS))));
+						
+					y = (((signs & 2) >> 1) ? (-1) : 1) * (rand() % (0xffffffff >> (int)(32 * (1.0 - (float)(i+2) / (float)N_TESTS))));
+					
+					if (!(op != ALU_OP_DIV && op != ALU_OP_DIVU && op != ALU_OP_REM && op != ALU_OP_REMU) && y == 0)
+						y = 1;
+					
+					r = alu_calc(alu, x, y, op, sync);
+					expected = expected_result(x, y, op);
+					
+					printf(op_format[op], x, y, r, expected, r ^ expected);
+					
+					if (r != expected && r == -expected)
+						printf("negation!\n");
+					
+					if (r ^ expected)
+						good = 0;
+				}
 			}
 		}
 	}
@@ -167,6 +192,12 @@ int main(int argc, char **argv)
 	tick(alu);
 	tick(alu);
 	tick(alu);
+	
+	if (good)
+		printf("All good!\n");
+	else
+		printf("Incorrect result!\n");
+	printf("Ticks at exit: %d\n", ticks);
     
     tfp->close();
 

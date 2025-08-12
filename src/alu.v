@@ -19,14 +19,6 @@
 `define ALU_OP_RSH		16
 `define ALU_OP_ARSH		17
 
-`define ALU_STATE_BITS 8
-
-`define ALU_STATE_READY 		0
-`define ALU_STATE_MULTIPLYING	1
-`define ALU_STATE_MUL_DONE		2
-`define ALU_STATE_DIVIDING		3
-`define ALU_STATE_DIV_DONE		4
-
 module index_of_first_1
 (
     input  wire [31:0] in,
@@ -34,8 +26,25 @@ module index_of_first_1
 );
     integer i;
     always @(*) begin
-        out = 0;
+        out = 31;
         for (i = 0; i < 32; i = i + 1) begin
+            if (in[i]) begin
+                out = i[4:0];
+                break;
+            end
+        end
+    end
+endmodule
+
+module index_of_last_1
+(
+    input  wire [31:0] in,
+    output reg  [4:0]  out
+);
+    integer i;
+    always @(*) begin
+        out = 0;
+        for (i = 31; i > 0; i = i - 1) begin
             if (in[i]) begin
                 out = i[4:0];
                 break;
@@ -51,39 +60,27 @@ module alu
 	input wire [31:0] in1, input wire [31:0] in2,
 	input wire trigger_sync,
 	
-	output reg busy = 0,
 	output reg result_ready = 0,
 	output reg [31:0] out_sync,
 	output reg overflow = 0,
 	output reg [31:0] out_async,
-	output reg async_overflow = 0
+	output reg async_overflow = 0,
+	
+	output reg busy = 0
 );
 	
-	wire multiply = (operation == `ALU_OP_MUL || operation == `ALU_OP_MULH || operation == `ALU_OP_MULHU || operation == `ALU_OP_MULHSU);
-	wire divide   = (operation == `ALU_OP_DIV || operation == `ALU_OP_DIVU || operation == `ALU_OP_REM   || operation == `ALU_OP_REMU);
-	wire rem	  = (operation == `ALU_OP_REM || operation == `ALU_OP_REMU);
-
+	wire muliply = (operation == `ALU_OP_MUL || operation == `ALU_OP_MULH || operation == `ALU_OP_MULHU || operation == `ALU_OP_MULHSU);
+	wire divide  = (operation == `ALU_OP_DIV || operation == `ALU_OP_DIVU || operation == `ALU_OP_REM   || operation == `ALU_OP_REMU);
+	wire rem	 = (operation == `ALU_OP_REM || operation == `ALU_OP_REMU);
 	
-	reg [`ALU_OPERATION_WIDTH - 1 : 0] op_in_progress;
+	wire [1:0] signedness = {
+		(operation == `ALU_OP_DIV) || (operation == `ALU_OP_REM) || (operation == `ALU_OP_MUL) || (operation == `ALU_OP_MULH),
+		(operation == `ALU_OP_DIV) || (operation == `ALU_OP_REM) || (operation == `ALU_OP_MUL) || (operation == `ALU_OP_MULH) || (operation == `ALU_OP_MULHSU)
+	};
+	wire mul_return_high = muliply & (operation != `ALU_OP_MUL);
 	
-	reg [1:0] signedness;
-	
-	reg [63:0] accumulator;
-	reg [63:0] deaccumulator;
-	reg [31:0] in1_saved;
-	reg [31:0] in2_saved;
-	
-	wire [31:0] abs_in1 = (in1_signed & in1[31]) ? -in1 : in1;
-	wire [31:0] abs_in2 = (in2_signed & in2[31]) ? -in2 : in2;
-	
-	wire in1_signed = ~(operation == `ALU_OP_MULHU || operation == `ALU_OP_DIVU || operation == `ALU_OP_REMU);
-	wire in2_signed = ~(operation == `ALU_OP_MULHU || operation == `ALU_OP_MULHSU || operation == `ALU_OP_DIVU || operation == `ALU_OP_REMU);
-	
-	reg  [4:0] exp2;
-	wire [4:0] in2_2_exp;
-	index_of_first_1 pe(in2, in2_2_exp);
-	
-	wire return_high = (op_in_progress == `ALU_OP_MULH) || (op_in_progress == `ALU_OP_MULHU) || (op_in_progress == `ALU_OP_MULHSU);
+	wire [31:0] in1_sabs = (signedness[0] & in1[31]) ? -in1 : in1;
+	wire [31:0] in2_sabs = (signedness[1] & in2[31]) ? -in2 : in2;
 	
 	//asynchronous operations; result is given by continuous assignment
 	always @(*) begin
@@ -99,112 +96,188 @@ module alu
 			
 			`ALU_OP_LSH:  out_async = in1 << in2;
 			`ALU_OP_RSH:  out_async = in1 >> in2;
-			`ALU_OP_ARSH: out_async = in1 >>> in2;
+			`ALU_OP_ARSH: out_async = $signed(in1) >>> in2;
 			
 			default: out_async = 0;
 		endcase
 	end
 	
-	reg [`ALU_STATE_BITS - 1 : 0] state;
+	localparam ALU_STATE_READY		 = 0;
+	localparam ALU_STATE_MULTIPLYING = 1;
+	localparam ALU_STATE_DIVIDING	 = 2;
+	localparam ALU_STATE_ERROR		 = 3;
 	
-	wire [63:0] summer1 = in2_saved[exp2 + 0] ? ({{32{signedness[0] ? in1_saved[31] : 1'b0}}, in1_saved} << (exp2 + 0)) : 0;
-	wire [63:0] summer2 = in2_saved[exp2 + 1] ? ({{32{signedness[0] ? in1_saved[31] : 1'b0}}, in1_saved} << (exp2 + 1)) : 0;
-	wire [63:0] summer3 = in2_saved[exp2 + 2] ? ({{32{signedness[0] ? in1_saved[31] : 1'b0}}, in1_saved} << (exp2 + 2)) : 0;
-	wire [63:0] summer4 = in2_saved[exp2 + 3] ? ({{32{signedness[0] ? in1_saved[31] : 1'b0}}, in1_saved} << (exp2 + 3)) : 0;
+	localparam ALU_STATE_BITS = $clog2(ALU_STATE_READY + ALU_STATE_MULTIPLYING + ALU_STATE_DIVIDING + ALU_STATE_ERROR);
 	
-	reg negate = 0;
+	reg [ALU_STATE_BITS - 1 : 0] state = ALU_STATE_READY;
 	
-	//synchronous operations; result takes multiple clock cycles
+	wire [4:0] in1_first_1;
+	wire [4:0] in2_first_1;
+	wire [4:0] in1_last_1;
+	wire [4:0] in2_last_1;
+	wire [4:0] in2_sabs_last_1;
+	
+	index_of_first_1 pe1(in1, in1_first_1);
+	index_of_first_1 pe2(in2, in2_first_1);
+	index_of_last_1  pe3(in1, in1_last_1);
+	index_of_last_1  pe4(in2, in2_last_1);
+	index_of_last_1  pe5(in2[31] ? -in2 : in2, in2_sabs_last_1);
+	
+	wire [4:0] div_start_index = in1_last_1 - (signedness[1] ? in2_sabs_last_1 : in2_last_1);
+	
+	reg negate_latched;
+	reg mul_return_high_latched;
+	
+	reg [63:0] mul_accumulator;
+	reg [31:0] div_accumulator;
+	
+	reg [31:0] dividend;
+	reg [31:0] divisor;
+	
+	wire [31:0] dividend_next 		 = (dividend >= divisor) ? dividend - divisor : dividend;
+	wire [31:0] div_accumulator_next = div_accumulator | ((dividend >= divisor) ? (32'd1 << index) : 0);
+	wire [31:0] divisor_next  		 = divisor >> 1;
+	
+	reg [$clog2(32) - 1 : 0] index;
+	
+	reg [31:0] in1_latched;
+	reg [31:0] in2_latched;
+	
+	reg [63:0] in1_latched_ext;
+	
+	wire [4:0] in2_first_1_rounded = {in2_first_1[4:2], 2'b00};
+	
+	wire [63:0] mul_partial_summand1 = in2_latched[index + 0] ? (in1_latched_ext << (index + 0)) : 0;
+	wire [63:0] mul_partial_summand2 = in2_latched[index + 1] ? (in1_latched_ext << (index + 1)) : 0;
+	wire [63:0] mul_partial_summand3 = in2_latched[index + 2] ? (in1_latched_ext << (index + 2)) : 0;
+	wire [63:0] mul_partial_summand4 = in2_latched[index + 3] ? (in1_latched_ext << (index + 3)) : 0;
+	
+	wire [63:0] mul_next_partial_sum 			=  mul_accumulator + mul_partial_summand1 + mul_partial_summand2 + mul_partial_summand3 + mul_partial_summand4;
+	wire [63:0] mul_next_partial_sum_neg 		= -mul_next_partial_sum;
+	wire [63:0] mul_next_partial_sum_cneg 		=  negate_latched 			? mul_next_partial_sum_neg 		: mul_next_partial_sum;
+	wire [31:0] mul_next_partial_sum_cneg_ch 	=  mul_return_high_latched ? mul_next_partial_sum_cneg[63:32] : mul_next_partial_sum_cneg[31:0];
+	
 	always @(posedge clock) begin
 		case (state)
-			`ALU_STATE_READY: begin
+			ALU_STATE_READY: begin
 				if (trigger_sync) begin
-					op_in_progress 	<= operation;
-					result_ready 	<= 0;
-					busy 			<= 1;
+					busy 		 <= 1;
+					result_ready <= 0;
 					
-					in1_saved <= in1;
-					in2_saved <= in2;
+					in1_latched <= in1;
+					in2_latched <= in2;
 					
-					signedness <= {in1_signed, in2_signed};
-					
-					if (multiply) begin
+					if (muliply) begin
 						if (in1 == 0 || in2 == 0) begin
-							out_sync		<= 0;
-							result_ready 	<= 1;
-							busy 			<= 0;
+							busy 		 <= 0;
+							out_sync 	 <= 0;
+							result_ready <= 1;
 						end
 						else begin
-							accumulator <= 0;
-							exp2 		<= 0;
-							state		<= `ALU_STATE_MULTIPLYING;
+							mul_accumulator <= 0;
+							index 		<= in2_first_1_rounded;
+							
+							if (signedness[0]) in1_latched_ext <= {{32{in1[31]}}, in1};
+							else					in1_latched_ext <= { 32'd0,		   in1};
+							
+							if (signedness[1]) begin
+								in2_latched 	<= in2[31] ? -in2 : in2;
+								negate_latched 	<= in2[31];
+							end
+							else begin
+								negate_latched 	<= 0;
+							end
+							
+							mul_return_high_latched <= mul_return_high;
+							
+							state <= ALU_STATE_MULTIPLYING;
 						end
 					end
 					else if (divide) begin
-						if (in1 == 0) begin
-							out_sync		<= 0;
-							result_ready 	<= 1;
-							busy 			<= 0;
+						if (in2 == 32'd0) begin
+							busy 		 <= 0;
+							out_sync 	 <= rem ? in1 : 32'hffffffff;
+							result_ready <= 1;
 						end
-						else if (in2 == 0) begin
-							out_sync		<= {32{1'b1}};
-							result_ready 	<= 1;
-							busy 			<= 0;
+						else if (in1 == 32'd0) begin
+							busy 		 <= 0;
+							out_sync 	 <= 0;
+							result_ready <= 1;
 						end
-						else if (abs_in2 == 1) begin
-							out_sync		<= rem ? 0 : (negate) ? -in1 : in1;
-							result_ready 	<= 1;
-							busy 			<= 0;
+						else if (in2 == in1) begin
+							busy 		 <= 0;
+							out_sync 	 <= rem ? 0 : 1;
+							result_ready <= 1;
 						end
-						else if (abs_in1 < abs_in2) begin
-							out_sync		<= rem ? (negate ? (abs_in2 - abs_in1) : abs_in1) : 0;
-							result_ready 	<= 1;
-							busy 			<= 0;
+						else if (signedness[0] && in2 == -in1) begin
+							busy 		 <= 0;
+							out_sync 	 <= rem ? 0 : -1;
+							result_ready <= 1;
+						end
+						else if (!signedness[0] && ($unsigned(in1) < $unsigned(in2))) begin
+							busy 		 <= 0;
+							out_sync 	 <= rem ? in1 : 0;
+							result_ready <= 1;
+						end
+						else if (signedness[0] && in1_sabs < in2_sabs) begin
+							busy 		 <= 0;
+							out_sync 	 <= rem ? (in1[31] ? -in1_sabs : in1_sabs) : 0;
+							result_ready <= 1;
+						end
+						else if (in2 == 1) begin
+							busy 		 <= 0;
+							out_sync 	 <= rem ? 0 : in1;
+							result_ready <= 1;
+						end
+						else if (signedness[1] && in2 == -1) begin
+							busy 		 <= 0;
+							out_sync 	 <= rem ? 0 : -in1;
+							result_ready <= 1;
 						end
 						else begin
-							accumulator   <= 0;
-							deaccumulator <= {{32{1'b0}}, abs_in1};
+							in2_latched 	<=  (signedness[1] & in2[31]) ? -in2 : in2;
+							dividend 		<=  (signedness[1] & in1[31]) ? -in1 : in1;
+							divisor  		<= ((signedness[1] & in2[31]) ? -in2 : in2) << div_start_index;
 							
-							negate <= (in1_signed & in1[31]) ^ (in2_signed & in2[31]);
+							div_accumulator <= 0;
+							index 			<= div_start_index;
 							
-							in1_saved <= abs_in1;
-							in2_saved <= abs_in2;
+							negate_latched 	<= rem ? signedness[1] & in1[31] : signedness[1] & (in1[31] ^ in2[31]);
 							
-							state <= `ALU_STATE_DIVIDING;
+							state			<= ALU_STATE_DIVIDING;
 						end
 					end
 				end
 			end
 			
-			`ALU_STATE_MULTIPLYING: begin
-				accumulator <= accumulator + summer1 + summer2 + summer3 + summer4;
-				
-				if (exp2 == 28) state <= `ALU_STATE_MUL_DONE;
-				else 			 exp2 <= exp2 + 4;
-			end
-			
-			
-			`ALU_STATE_MUL_DONE: begin
-				out_sync		<= return_high ? accumulator[63:32] : accumulator[31:0];
-				result_ready 	<= 1;
-				busy 			<= 0;
-				state 			<= `ALU_STATE_READY;
-			end
-			
-			`ALU_STATE_DIVIDING: begin
-				accumulator   <= accumulator + 1;
-				deaccumulator <= deaccumulator - {{32{1'b0}}, in2_saved};
-				
-				if (deaccumulator < {{32{1'b0}}, in2_saved + in2_saved}) begin
-					state <= `ALU_STATE_DIV_DONE;
+			ALU_STATE_MULTIPLYING: begin
+				if (index == 28) begin
+					out_sync <= mul_next_partial_sum_cneg_ch;
+					
+					result_ready <= 1;
+					busy 		 <= 0;
+					state 		 <= ALU_STATE_READY;
+				end
+				else begin
+					mul_accumulator <= mul_next_partial_sum;
+					index			<= index + 4;
 				end
 			end
 			
-			`ALU_STATE_DIV_DONE: begin
-				out_sync		<= rem ? (negate ? (in2_saved - deaccumulator[31:0]) : deaccumulator[31:0]) : (negate ? -accumulator[31:0] : accumulator[31:0]);
-				result_ready 	<= 1;
-				busy 			<= 0;
-				state 			<= `ALU_STATE_READY;
+			ALU_STATE_DIVIDING: begin
+				if (index == 0) begin
+					out_sync <= negate_latched ? (rem ? -dividend_next : -div_accumulator_next) : (rem ? dividend_next : div_accumulator_next);
+					
+					result_ready <= 1;
+					busy 		 <= 0;
+					state 		 <= ALU_STATE_READY;
+				end
+				else begin
+					dividend 		<= dividend_next;
+					divisor  		<= divisor_next;
+					div_accumulator <= div_accumulator_next;
+					index 			<= index - 1;
+				end
 			end
 		endcase
 	end
