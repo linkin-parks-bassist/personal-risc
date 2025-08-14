@@ -5,29 +5,16 @@
 #include <assert.h>
 #include <time.h>
 
-#define ALU_OP_PT1		0
-#define ALU_OP_PT2		1
-#define ALU_OP_ADD 		2
-#define ALU_OP_SUB 		3
-#define ALU_OP_AND 		4
-#define ALU_OP_OR  		5
-#define ALU_OP_XOR 		6
-#define ALU_OP_MUL 		7
-#define ALU_OP_MULH 	8
-#define ALU_OP_MULHU 	9
-#define ALU_OP_MULHSU 	10
-#define ALU_OP_DIV 		11
-#define ALU_OP_DIVU 	12
-#define ALU_OP_REM 		13
-#define ALU_OP_REMU 	14
-#define ALU_OP_LSH		15
-#define ALU_OP_RSH		16
-#define ALU_OP_ARSH		17
+#define N_OPERATIONS 20
 
-const char *op_format[18] = 
+static const int opcode_array[N_OPERATIONS] = {	0b00000, 0b10000, 0b00111, 0b00110,
+												0b00100, 0b01000, 0b01001, 0b01011,
+												0b01010, 0b01100, 0b01101, 0b01110,
+												0b01111, 0b00001, 0b00101, 0b10101,
+												0b00010, 0b00011, 0b11000, 0b11001};
+
+const char *op_format[N_OPERATIONS] = 
 {
-	"\\pi_1(0b%032b, 0b%032b) = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
-	"\\pi_2(0b%032b, 0b%032b) = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
 	"0b%032b + 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
 	"0b%032b - 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
 	"0b%032b & 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
@@ -43,7 +30,11 @@ const char *op_format[18] =
 	"(unsigned) 0b%032b %% 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
 	"0b%032b << 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
 	"0b%032b >> 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
-	"0b%032b >>> 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n"
+	"0b%032b >>> 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"0b%032b < 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"(unsigned) 0b%032b < 0b%032b = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"\\pi_1(0b%032b, 0b%032b) = 0b%032b    (expected 0b%032b), xor 0b%032b\n",
+	"\\pi_2(0b%032b, 0b%032b) = 0b%032b    (expected 0b%032b), xor 0b%032b\n"
 };
 
 static uint64_t ticks = 0;
@@ -68,28 +59,30 @@ int expected_result(int x, int y, int op)
 	int64_t prod;
 	switch (op)
 	{
-		case (ALU_OP_PT1): 	return x;
-		case (ALU_OP_PT2): 	return y;
-		case (ALU_OP_ADD): 	return x+y;
-		case (ALU_OP_SUB): 	return x-y;
-		case (ALU_OP_AND): 	return x&y;
-		case (ALU_OP_OR):	return x|y;
-		case (ALU_OP_XOR):	return x^y;
-		case (ALU_OP_MUL):	return (int)(((int64_t)x*(int64_t)y));
-		case (ALU_OP_MULH):	return (int)(((int64_t)x*(int64_t)y) >> 32);
-		case (ALU_OP_MULHU):	return (uint32_t)(((uint64_t)(uint32_t)x * (uint64_t)(uint32_t)y) >> 32);
-		case (ALU_OP_MULHSU):
+		case 18: 	return x;
+		case 19: 	return y;
+		case 0: 	return x+y;
+		case 1: 	return x-y;
+		case 2: 	return x&y;
+		case 3:	return x|y;
+		case 4:	return x^y;
+		case 5:	return (int)(((int64_t)x*(int64_t)y));
+		case 6:	return (int)(((int64_t)x*(int64_t)y) >> 32);
+		case 7:	return (uint32_t)(((uint64_t)(uint32_t)x * (uint64_t)(uint32_t)y) >> 32);
+		case 8:
 			prod = (int64_t)x * (uint64_t)(uint32_t)y;
 			return (int32_t)(prod >> 32);
 			break;
-		case (ALU_OP_DIV):	return x / y;
-		case (ALU_OP_DIVU):	return (int)((uint32_t)x / (uint32_t)y);
-		case (ALU_OP_REM):	return x % y;
-		case (ALU_OP_REMU):	return (int)((uint32_t)x % (uint32_t)y);
-		case (ALU_OP_LSH):	return ((uint32_t)y < 32 ? x << (uint32_t)(y & 31) : 0);
-		case (ALU_OP_RSH):	return ((uint32_t)y < 32 ? (uint32_t) x >> (y & 31) : (uint32_t)x >> 32);
-		case (ALU_OP_ARSH):	return ((uint32_t)y < 32 ? x >> (y & 31) : (x < 0) ? -1 : 0);
-		default: assert(false);
+		case 9:		return (y != 0) ? (x / y) : 0xffffffff;
+		case 10:	return (y != 0) ? (int)((uint32_t)x / (uint32_t)y) : 0xffffffff;
+		case 11:	return (y != 0) ? (x % y) : x;
+		case 12:	return (y != 0) ? (int)((uint32_t)x % (uint32_t)y) : x;
+		case 13:	return ((uint32_t)y < 32 ? x << (uint32_t)(y & 31) : 0);
+		case 14:	return ((uint32_t)y < 32 ? (uint32_t) x >> (y & 31) : (uint32_t)x >> 32);
+		case 15:	return ((uint32_t)y < 32 ? x >> (y & 31) : (x < 0) ? -1 : 0);
+		case 16:	return x < y;
+		case 17:	return (uint32_t)x < (uint32_t)y;
+		default: 	assert(false);
 	}
 }
 
@@ -98,7 +91,7 @@ int sync_op(Valu* alu, int x, int y, int operation)
 {
 	alu->in1 = x;
 	alu->in2 = y;
-	alu->operation = operation;
+	alu->operation = opcode_array[operation];
 	alu->clock_enable = 1;
 	
 	uint64_t start_ticks = ticks;
@@ -124,7 +117,7 @@ int async_op(Valu* alu, int x, int y, int operation)
 {
 	alu->in1 = x;
 	alu->in2 = y;
-	alu->operation = operation;
+	alu->operation = opcode_array[operation];
 
 	alu->eval();
 	
@@ -155,9 +148,12 @@ int main(int argc, char **argv)
 
 	tick(alu);
 
-	for (int op = 0; good && op < 18; op++)
+	for (int op = 0; good && op < N_OPERATIONS; op++)
 	{
-		sync = (op >= ALU_OP_MUL && op < ALU_OP_LSH);
+		alu->operation = opcode_array[op];
+		alu->eval();
+		
+		sync = alu->op_sync;
 		for (int signs = 0; signs < 4; signs++)
 		{
 			for (int flip = 0; flip < 2; flip++)
@@ -170,9 +166,6 @@ int main(int argc, char **argv)
 						x = (( signs & 1      ) ? (-1) : 1) * (rand() % (0xffffffff >> (int)(32 * (1.0 - (float)((N_TESTS - i)+2) / (float)N_TESTS))));
 						
 					y = (((signs & 2) >> 1) ? (-1) : 1) * (rand() % (0xffffffff >> (int)(32 * (1.0 - (float)(i+2) / (float)N_TESTS))));
-					
-					if (!(op != ALU_OP_DIV && op != ALU_OP_DIVU && op != ALU_OP_REM && op != ALU_OP_REMU) && y == 0)
-						y = 1;
 					
 					r = alu_calc(alu, x, y, op, sync);
 					expected = expected_result(x, y, op);

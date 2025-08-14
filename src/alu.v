@@ -1,23 +1,4 @@
-`define ALU_OPERATION_WIDTH 5
-
-`define ALU_OP_PT1		0
-`define ALU_OP_PT2		1
-`define ALU_OP_ADD 		2
-`define ALU_OP_SUB 		3
-`define ALU_OP_AND 		4
-`define ALU_OP_OR  		5
-`define ALU_OP_XOR 		6
-`define ALU_OP_MUL 		7
-`define ALU_OP_MULH 	8
-`define ALU_OP_MULHU 	9
-`define ALU_OP_MULHSU 	10
-`define ALU_OP_DIV 		11
-`define ALU_OP_DIVU 	12
-`define ALU_OP_REM 		13
-`define ALU_OP_REMU 	14
-`define ALU_OP_LSH		15
-`define ALU_OP_RSH		16
-`define ALU_OP_ARSH		17
+`include "alu.vh"
 
 module index_of_first_1
 (
@@ -53,6 +34,39 @@ module index_of_last_1
     end
 endmodule
 
+module alu_op_validator(input wire [`ALU_OPERATION_WIDTH - 1 : 0] operation, output reg op_valid, output reg op_sync);
+	always @(*) begin
+		case (operation)
+			`ALU_OP_PT1:	{op_valid, op_sync} = 2'b10;
+			`ALU_OP_PT2:	{op_valid, op_sync} = 2'b10;
+			
+			`ALU_OP_ADD:	{op_valid, op_sync} = 2'b10;
+			`ALU_OP_SUB:	{op_valid, op_sync} = 2'b10;
+			`ALU_OP_AND:	{op_valid, op_sync} = 2'b10;
+			`ALU_OP_OR:		{op_valid, op_sync} = 2'b10;
+			`ALU_OP_XOR:	{op_valid, op_sync} = 2'b10;
+			
+			`ALU_OP_LSH:	{op_valid, op_sync} = 2'b10;
+			`ALU_OP_RSH:	{op_valid, op_sync} = 2'b10;
+			`ALU_OP_ARSH:	{op_valid, op_sync} = 2'b10;
+			
+			`ALU_OP_LESS:	{op_valid, op_sync} = 2'b10;
+			`ALU_OP_LESS_U:	{op_valid, op_sync} = 2'b10;
+			
+			`ALU_OP_MUL:	{op_valid, op_sync} = 2'b11;
+			`ALU_OP_MULH:	{op_valid, op_sync} = 2'b11;
+			`ALU_OP_MULHU:	{op_valid, op_sync} = 2'b11;
+			`ALU_OP_MULHSU:	{op_valid, op_sync} = 2'b11;
+			`ALU_OP_DIV:	{op_valid, op_sync} = 2'b11;
+			`ALU_OP_DIVU:	{op_valid, op_sync} = 2'b11;
+			`ALU_OP_REM:	{op_valid, op_sync} = 2'b11;
+			`ALU_OP_REMU:	{op_valid, op_sync} = 2'b11;
+			
+			default:		{op_valid, op_sync} = 2'b01;
+		endcase
+	end
+endmodule
+
 module alu
 (
 	input wire clock,
@@ -60,14 +74,18 @@ module alu
 	input wire [`ALU_OPERATION_WIDTH - 1 : 0] operation,
 	input wire [31:0] in1, input wire [31:0] in2,
 	
+	output wire op_valid,
+	output wire op_sync,
+	
 	output reg result_ready = 0,
 	output reg [31:0] out_sync,
 	output reg overflow = 0,
 	output reg [31:0] out_async,
 	output reg async_overflow = 0,
 	
-	output reg busy = 0
+	output reg busy  = 0
 );
+	alu_op_validator validator(operation, op_valid, op_sync);
 	
 	wire muliply = (operation == `ALU_OP_MUL || operation == `ALU_OP_MULH || operation == `ALU_OP_MULHU || operation == `ALU_OP_MULHSU);
 	wire divide  = (operation == `ALU_OP_DIV || operation == `ALU_OP_DIVU || operation == `ALU_OP_REM   || operation == `ALU_OP_REMU);
@@ -97,6 +115,9 @@ module alu
 			`ALU_OP_LSH:  out_async = in1 << in2;
 			`ALU_OP_RSH:  out_async = in1 >> in2;
 			`ALU_OP_ARSH: out_async = $signed(in1) >>> in2;
+			
+			`ALU_OP_LESS: 	out_async = {{31{1'b0}}, (  $signed(in1) <   $signed(in2))};
+			`ALU_OP_LESS_U: out_async = {{31{1'b0}}, ($unsigned(in1) < $unsigned(in2))};
 			
 			default: out_async = 0;
 		endcase
