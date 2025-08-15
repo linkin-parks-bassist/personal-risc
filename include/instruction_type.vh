@@ -1,0 +1,13 @@
+`define INSTR_INVALID 0
+
+`define INSTR_TYPE_ALU_R 	1
+`define INSTR_TYPE_ALU_I 	2
+`define INSTR_TYPE_LOAD 	3
+`define INSTR_TYPE_STORE 	4
+`define INSTR_TYPE_BRANCH 	5
+`define INSTR_TYPE_JUMP 	6
+`define INSTR_TYPE_LUI 		7
+`define INSTR_TYPE_AUIPC 	8
+`define INSTR_TYPE_ENV 		9
+	
+`define INSTR_TYPE_WIDTH $clog2(`INSTR_TYPE_ENV + 1)

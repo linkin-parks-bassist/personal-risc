@@ -140,7 +140,7 @@ int main(int argc, char **argv)
     
     Verilated::traceEverOn(true);
 	alu->trace(tfp, 99);
-	tfp->open("wave.vcd");
+	tfp->open("verilator/alu.vcd");
 
 	int x, y, r, expected;
 	int sync = 0;
